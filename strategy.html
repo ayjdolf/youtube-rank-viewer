@@ -1,0 +1,611 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유튜브 키워드 분석기 (YouTube Keyword Analyzer)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0"
+      }
+    }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #dc2626;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-gray-50 text-gray-900 h-screen flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-80 bg-white border-r border-gray-200 flex flex-col shadow-sm z-20 flex-shrink-0 overflow-y-auto">
+        <div class="p-6">
+            <div class="flex items-center gap-2 mb-8 text-red-600 font-bold text-2xl">
+                <svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+                YT Analyzer
+            </div>
+
+            <div class="space-y-6">
+                <!-- YouTube API Key -->
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <label class="block text-sm font-bold text-gray-800 mb-2">
+                        YouTube API Key <span class="text-red-500">*</span>
+                    </label>
+                    <input type="password" id="youtubeKeyInput" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-sm bg-white" placeholder="YouTube Data API Key 입력">
+                    <p class="text-xs text-gray-500 mt-2 leading-relaxed">
+                        YouTube 데이터를 가져오기 위해 필수입니다. 
+                        <a href="https://console.cloud.google.com/" target="_blank" class="text-blue-600 hover:underline">Google Cloud Console</a>에서 발급받으세요.
+                    </p>
+                </div>
+
+                <!-- Gemini API Key -->
+                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                    <label class="block text-sm font-bold text-indigo-900 mb-2 flex items-center justify-between">
+                        <span>Gemini API Key</span>
+                        <span class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded">AI 기능용</span>
+                    </label>
+                    <input type="password" id="geminiKeyInput" class="block w-full px-3 py-2 border border-indigo-200 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white" placeholder="Gemini API Key 입력 (선택)">
+                    <p class="text-xs text-indigo-600 mt-2 leading-relaxed">
+                        입력 시 'AI 전략 리포트'가 활성화됩니다.
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="font-semibold hover:underline">여기서 발급</a>
+                    </p>
+                </div>
+
+                <!-- Buttons -->
+                <div class="flex gap-2 pt-2">
+                    <button id="saveKeysBtn" class="flex-1 bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-gray-800 transition-all shadow-md flex justify-center items-center gap-2 transform active:scale-95">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                        키 저장하기
+                    </button>
+                    <button id="deleteKeysBtn" class="bg-white text-gray-700 border border-gray-300 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors shadow-sm">
+                        초기화
+                    </button>
+                </div>
+                <p class="text-[11px] text-gray-400 text-center">
+                    🔒 API Key는 서버로 전송되지 않고<br>브라우저(Local Storage)에만 저장됩니다.
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+        <div class="flex-1 overflow-y-auto p-8" id="mainContainer">
+            
+            <!-- Header & Search -->
+            <div class="max-w-7xl mx-auto mb-8">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900 tracking-tight">유튜브 키워드 분석</h1>
+                        <p class="text-gray-500 mt-1">키워드를 검색하고 데이터 기반 성장 전략을 확인하세요.</p>
+                    </div>
+                    <form id="searchForm" class="relative w-full md:w-[28rem]">
+                        <input type="text" id="keywordInput" class="w-full pl-5 pr-14 py-3.5 rounded-xl border border-gray-200 shadow-sm focus:ring-4 focus:ring-red-100 focus:border-red-500 outline-none transition-all text-gray-800 placeholder-gray-400" placeholder="분석할 키워드 (예: 브이로그, 주식)">
+                        <button type="submit" class="absolute right-2 top-2 bottom-2 bg-red-600 text-white px-4 rounded-lg hover:bg-red-700 transition-colors shadow-sm flex items-center justify-center">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="hidden flex-col items-center justify-center py-32 fade-in">
+                <div class="loader mb-6"></div>
+                <p class="text-gray-600 font-medium text-lg">YouTube 데이터를 분석하고 있습니다...</p>
+                <p class="text-gray-400 text-sm mt-2">API 응답 속도에 따라 몇 초 정도 걸릴 수 있습니다.</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="text-center py-32 border-2 border-dashed border-gray-200 rounded-2xl max-w-7xl mx-auto bg-gray-50/50">
+                <div class="bg-white p-4 rounded-full shadow-sm inline-block mb-4">
+                    <svg class="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900">분석을 시작해보세요</h3>
+                <p class="text-gray-500 mt-2">왼쪽 사이드바에 API 키를 입력하고<br>상단 검색창에 키워드를 입력하세요.</p>
+            </div>
+
+            <!-- Dashboard Content -->
+            <div id="dashboard" class="hidden max-w-7xl mx-auto space-y-8 fade-in pb-10">
+                
+                <!-- Metrics Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Metric 1: Views -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="p-2.5 bg-red-50 rounded-xl text-red-600">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                            </div>
+                        </div>
+                        <p class="text-sm font-medium text-gray-500">추정 검색량 (평균 조회수)</p>
+                        <div class="flex items-end gap-3 mt-1 flex-wrap">
+                            <h3 class="text-2xl font-bold text-gray-900 leading-none" id="metricViews">-</h3>
+                            <div id="badgeViews"></div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-3">상위 10개 영상 기준</p>
+                    </div>
+
+                    <!-- Metric 2: Competition -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="p-2.5 bg-blue-50 rounded-xl text-blue-600">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                            </div>
+                        </div>
+                        <p class="text-sm font-medium text-gray-500">경쟁 강도 (평균 구독자)</p>
+                        <div class="flex items-end gap-3 mt-1 flex-wrap">
+                            <h3 class="text-2xl font-bold text-gray-900 leading-none" id="metricSubs">-</h3>
+                            <div id="badgeSubs"></div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-3">상위 노출 채널 기준</p>
+                    </div>
+
+                    <!-- Metric 3: Tags -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="p-2.5 bg-green-50 rounded-xl text-green-600">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
+                            </div>
+                        </div>
+                        <p class="text-sm font-medium text-gray-500">핵심 추천 태그</p>
+                        <h3 class="text-xl font-bold text-gray-900 mt-1 truncate" id="metricTopTag">-</h3>
+                        <p class="text-sm text-gray-500 mt-2 line-clamp-2" id="metricOtherTags">-</p>
+                    </div>
+                </div>
+
+                <!-- AI Strategy Section -->
+                <div id="aiSection" class="hidden bg-gradient-to-br from-indigo-50 via-white to-purple-50 rounded-2xl p-8 border border-indigo-100 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-4 opacity-10">
+                        <svg class="w-32 h-32 text-indigo-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 6a1 1 0 0 0-1 1v4.59l-3.29-3.3a1 1 0 0 0-1.42 1.42l5 5a1 1 0 0 0 1.42 0l5-5a1 1 0 0 0-1.42-1.42L13 11.59V7a1 1 0 0 0-1-1z"/></svg>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-200">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <h2 class="text-xl font-bold text-indigo-900">Gemini AI 채널 성장 전략</h2>
+                            <span class="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-bold tracking-wide uppercase">AI Report</span>
+                        </div>
+                        
+                        <div id="aiLoading" class="hidden space-y-4 animate-pulse">
+                            <div class="h-4 bg-indigo-200/50 rounded w-3/4"></div>
+                            <div class="h-4 bg-indigo-200/50 rounded w-full"></div>
+                            <div class="h-4 bg-indigo-200/50 rounded w-5/6"></div>
+                            <div class="h-4 bg-indigo-200/50 rounded w-2/3"></div>
+                        </div>
+
+                        <div id="aiContent" class="text-gray-800 text-[15px] leading-7 font-medium whitespace-pre-line bg-white/60 p-6 rounded-xl border border-indigo-50/50 backdrop-blur-sm">
+                            <!-- AI Response goes here -->
+                        </div>
+                        
+                        <div id="aiError" class="hidden mt-4 bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg border border-red-100 flex items-center gap-2">
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span id="aiErrorMessage"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-8 py-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+                        <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                            상위 노출 영상 분석
+                        </h3>
+                        <button id="downloadCsvBtn" class="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-2 bg-white border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            CSV 내보내기
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-gray-600">
+                            <thead class="bg-gray-50 text-xs uppercase font-semibold text-gray-500 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-6 py-4 w-[40%]">Video</th>
+                                    <th class="px-6 py-4">Channel</th>
+                                    <th class="px-6 py-4 text-right">Views</th>
+                                    <th class="px-6 py-4 text-right">Subs</th>
+                                    <th class="px-6 py-4 text-right">Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="videoTableBody" class="divide-y divide-gray-100">
+                                <!-- Rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script type="module">
+        import { GoogleGenAI } from "@google/genai";
+
+        // --- State ---
+        let currentVideos = [];
+        let currentKeyword = '';
+
+        // --- DOM Elements ---
+        const youtubeKeyInput = document.getElementById('youtubeKeyInput');
+        const geminiKeyInput = document.getElementById('geminiKeyInput');
+        const saveKeysBtn = document.getElementById('saveKeysBtn');
+        const deleteKeysBtn = document.getElementById('deleteKeysBtn');
+        
+        const searchForm = document.getElementById('searchForm');
+        const keywordInput = document.getElementById('keywordInput');
+        const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+        
+        const emptyState = document.getElementById('emptyState');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const dashboard = document.getElementById('dashboard');
+        
+        const metricViews = document.getElementById('metricViews');
+        const badgeViews = document.getElementById('badgeViews');
+        const metricSubs = document.getElementById('metricSubs');
+        const badgeSubs = document.getElementById('badgeSubs');
+        const metricTopTag = document.getElementById('metricTopTag');
+        const metricOtherTags = document.getElementById('metricOtherTags');
+        const videoTableBody = document.getElementById('videoTableBody');
+        
+        const aiSection = document.getElementById('aiSection');
+        const aiContent = document.getElementById('aiContent');
+        const aiLoading = document.getElementById('aiLoading');
+        const aiError = document.getElementById('aiError');
+        const aiErrorMessage = document.getElementById('aiErrorMessage');
+
+        // --- Initialization ---
+        window.addEventListener('DOMContentLoaded', () => {
+            const ytKey = localStorage.getItem('youtube_api_key');
+            const geminiKey = localStorage.getItem('gemini_api_key');
+            if (ytKey) youtubeKeyInput.value = ytKey;
+            if (geminiKey) geminiKeyInput.value = geminiKey;
+        });
+
+        // --- Event Listeners ---
+        saveKeysBtn.addEventListener('click', () => {
+            const ytKey = youtubeKeyInput.value.trim();
+            const geminiKey = geminiKeyInput.value.trim();
+            
+            if(!ytKey) {
+                alert('YouTube API Key는 필수입니다.');
+                return;
+            }
+            
+            localStorage.setItem('youtube_api_key', ytKey);
+            if (geminiKey) {
+                localStorage.setItem('gemini_api_key', geminiKey);
+            } else {
+                localStorage.removeItem('gemini_api_key');
+            }
+            
+            alert('API Key가 성공적으로 저장되었습니다.');
+        });
+
+        deleteKeysBtn.addEventListener('click', () => {
+            if(confirm('저장된 모든 API 키를 삭제하시겠습니까?')) {
+                localStorage.removeItem('youtube_api_key');
+                localStorage.removeItem('gemini_api_key');
+                youtubeKeyInput.value = '';
+                geminiKeyInput.value = '';
+                alert('초기화되었습니다.');
+            }
+        });
+
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const keyword = keywordInput.value.trim();
+            const apiKey = localStorage.getItem('youtube_api_key');
+            
+            if (!keyword) return;
+            if (!apiKey) {
+                alert('왼쪽 사이드바에 YouTube API Key를 입력하고 [키 저장하기] 버튼을 눌러주세요.');
+                return;
+            }
+
+            currentKeyword = keyword;
+            setLoading(true);
+
+            try {
+                const videos = await fetchYouTubeData(keyword, apiKey);
+                currentVideos = videos;
+                
+                if (videos.length === 0) {
+                    alert('검색 결과가 없습니다.');
+                    setLoading(false);
+                    return;
+                }
+
+                const metrics = calculateMetrics(videos);
+                renderDashboard(metrics, videos);
+                setLoading(false);
+                
+                // Gemini Logic: Run only if key exists
+                const geminiKey = localStorage.getItem('gemini_api_key');
+                if (geminiKey) {
+                    generateAiStrategy(keyword, metrics, videos, geminiKey);
+                } else {
+                    aiSection.classList.add('hidden');
+                }
+
+            } catch (error) {
+                console.error(error);
+                alert('데이터를 가져오는 중 오류가 발생했습니다: ' + error.message);
+                setLoading(false);
+            }
+        });
+
+        downloadCsvBtn.addEventListener('click', () => {
+            if (currentVideos.length === 0) return;
+            downloadCSV(currentVideos);
+        });
+
+        // --- Logic Helper Functions ---
+
+        // 1. Badge Generators
+        function getViewsBadge(views) {
+            if (views < 50000) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">낮음</span>`;
+            } else if (views < 500000) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">보통</span>`;
+            } else if (views < 1000000) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">높음</span>`;
+            } else {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 gap-1">
+                    매우 높음 
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.45-.412-1.721a1 1 0 10-1.997.077c.05 2.028.753 3.52 1.94 4.542.457.394.996.696 1.57.88a9.75 9.75 0 00-1.636 2.898c-.283.856-.395 1.838-.088 2.715.153.435.41.825.75 1.127.34.302.753.518 1.196.626 1.408.344 2.872-.257 3.916-1.22 1.353-1.248 1.956-3.235 1.578-5.385-.094-.537-.257-1.047-.478-1.524a10.052 10.052 0 011.578-1.895 1 1 0 10-1.414-1.414c-.05.05-.098.102-.146.155.084-.52.138-1.037.16-1.536.035-.78-.053-1.492-.256-2.096z" clip-rule="evenodd" /></svg>
+                </span>`;
+            }
+        }
+
+        function getSubsBadge(subs) {
+            if (subs < 100000) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 gap-1">
+                    낮음 (진입 추천)
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </span>`;
+            } else if (subs < 1000000) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">보통</span>`;
+            } else {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">높음 (경쟁 치열)</span>`;
+            }
+        }
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                emptyState.classList.add('hidden');
+                dashboard.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+                loadingSpinner.classList.add('flex');
+            } else {
+                loadingSpinner.classList.add('hidden');
+                loadingSpinner.classList.remove('flex');
+                dashboard.classList.remove('hidden');
+            }
+        }
+
+        async function fetchYouTubeData(keyword, apiKey) {
+            const BASE_URL = 'https://www.googleapis.com/youtube/v3';
+
+            // 1. Search (video, order by viewCount)
+            const searchUrl = `${BASE_URL}/search?part=snippet&maxResults=10&q=${encodeURIComponent(keyword)}&type=video&order=viewCount&key=${apiKey}`;
+            const searchRes = await fetch(searchUrl);
+            const searchData = await searchRes.json();
+            
+            if (searchData.error) throw new Error("YouTube API 오류: " + searchData.error.message);
+            if (!searchData.items || searchData.items.length === 0) return [];
+
+            const videoIds = searchData.items.map(item => item.id.videoId).join(',');
+
+            // 2. Video Details (statistics, tags)
+            const videosUrl = `${BASE_URL}/videos?part=snippet,statistics&id=${videoIds}&key=${apiKey}`;
+            const videosRes = await fetch(videosUrl);
+            const videosData = await videosRes.json();
+            
+            // 3. Channel Details (subscriberCount)
+            const channelIds = [...new Set(videosData.items.map(v => v.snippet.channelId))].join(',');
+            const channelsUrl = `${BASE_URL}/channels?part=statistics&id=${channelIds}&key=${apiKey}`;
+            const channelsRes = await fetch(channelsUrl);
+            const channelsData = await channelsRes.json();
+            
+            const channelMap = {};
+            if(channelsData.items) {
+                channelsData.items.forEach(c => channelMap[c.id] = c.statistics);
+            }
+
+            // Combine Data
+            return videosData.items.map(v => ({
+                id: v.id,
+                snippet: v.snippet,
+                statistics: v.statistics,
+                channelStats: channelMap[v.snippet.channelId]
+            }));
+        }
+
+        function calculateMetrics(videos) {
+            let totalViews = 0;
+            let totalSubs = 0;
+            const tagCounts = {};
+
+            videos.forEach(v => {
+                totalViews += parseInt(v.statistics.viewCount || 0);
+                totalSubs += parseInt(v.channelStats?.subscriberCount || 0);
+                
+                if (v.snippet.tags) {
+                    v.snippet.tags.forEach(tag => {
+                        const t = tag.toLowerCase();
+                        tagCounts[t] = (tagCounts[t] || 0) + 1;
+                    });
+                }
+            });
+
+            const topTags = Object.entries(tagCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([tag, count]) => ({ tag, count }));
+
+            return {
+                avgViews: totalViews / videos.length,
+                avgSubs: totalSubs / videos.length,
+                topTags
+            };
+        }
+
+        function renderDashboard(metrics, videos) {
+            // Render Metrics with Badges
+            metricViews.textContent = Math.round(metrics.avgViews).toLocaleString();
+            badgeViews.innerHTML = getViewsBadge(metrics.avgViews);
+            
+            metricSubs.textContent = Math.round(metrics.avgSubs).toLocaleString();
+            badgeSubs.innerHTML = getSubsBadge(metrics.avgSubs);
+            
+            if (metrics.topTags.length > 0) {
+                metricTopTag.textContent = '#' + metrics.topTags[0].tag;
+                metricOtherTags.innerHTML = metrics.topTags.slice(1, 6).map(t => 
+                    `<span class="inline-block bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs mr-1 mb-1">#${t.tag}</span>`
+                ).join('');
+            } else {
+                metricTopTag.textContent = '태그 데이터 없음';
+                metricOtherTags.textContent = '';
+            }
+
+            // Render Table
+            videoTableBody.innerHTML = videos.map(v => `
+                <tr class="hover:bg-gray-50 transition-colors group">
+                    <td class="px-6 py-4">
+                        <div class="flex items-start gap-4">
+                            <div class="relative flex-shrink-0 w-32 aspect-video bg-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                <img src="${v.snippet.thumbnails.medium.url}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="Thumbnail">
+                            </div>
+                            <div class="flex-1 min-w-0 py-1">
+                                <a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" class="text-sm font-semibold text-gray-900 hover:text-red-600 line-clamp-2 leading-snug mb-1">
+                                    ${v.snippet.title}
+                                </a>
+                                <p class="text-xs text-gray-400">ID: ${v.id}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-gray-800 text-sm font-medium">
+                        ${v.snippet.channelTitle}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <span class="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-mono">
+                            ${parseInt(v.statistics.viewCount).toLocaleString()}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                         <span class="text-xs text-gray-500 font-mono">
+                            ${parseInt(v.channelStats?.subscriberCount || 0).toLocaleString()}
+                         </span>
+                    </td>
+                    <td class="px-6 py-4 text-right text-sm text-gray-500 whitespace-nowrap">
+                        ${new Date(v.snippet.publishedAt).toLocaleDateString()}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function generateAiStrategy(keyword, metrics, videos, apiKey) {
+            aiSection.classList.remove('hidden');
+            aiContent.textContent = '';
+            aiContent.classList.add('hidden');
+            aiLoading.classList.remove('hidden');
+            aiError.classList.add('hidden');
+
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+                const topVideoTitles = videos.slice(0, 5).map(v => `- ${v.snippet.title} (조회수: ${parseInt(v.statistics.viewCount).toLocaleString()})`).join('\n');
+                const popularTags = metrics.topTags.map(t => t.tag).join(', ');
+
+                const prompt = `
+                역할: 당신은 전문 유튜브 채널 성장 컨설턴트입니다.
+                상황: 사용자가 '${keyword}' 키워드로 유튜브 영상을 만들려고 합니다.
+                
+                [분석 데이터]
+                - 키워드: ${keyword}
+                - 상위 노출 영상 평균 조회수: ${Math.round(metrics.avgViews).toLocaleString()}회
+                - 경쟁 채널 평균 구독자수: ${Math.round(metrics.avgSubs).toLocaleString()}명
+                - 인기 태그: ${popularTags}
+                - 현재 상위 5개 영상 제목:
+                ${topVideoTitles}
+
+                [요청 사항]
+                위 데이터를 바탕으로 이 키워드를 공략하기 위한 구체적인 전략을 3가지 포인트로 정리해줘.
+                1. 콘텐츠 기획 방향 (어떤 앵글로 접근해야 차별화될지)
+                2. 클릭을 부르는 썸네일/제목 전략
+                3. 추천 해시태그 및 키워드 조합
+                
+                * 답변은 한국어로, 핵심만 간결하게, 총 10줄 내외로 작성해줘.
+                * 마크다운 형식 없이 순수 텍스트로 가독성 좋게 줄바꿈해줘.
+                `;
+
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                });
+
+                const text = response.text || "분석 결과를 생성할 수 없습니다.";
+                
+                aiLoading.classList.add('hidden');
+                aiContent.textContent = text;
+                aiContent.classList.remove('hidden');
+
+            } catch (error) {
+                console.error(error);
+                aiLoading.classList.add('hidden');
+                aiErrorMessage.textContent = '리포트 생성 실패: ' + error.message;
+                aiError.classList.remove('hidden');
+            }
+        }
+
+        function downloadCSV(videos) {
+            const headers = ['Video Title', 'Channel Name', 'Views', 'Subscribers', 'Published Date', 'Video ID', 'URL'];
+            const rows = videos.map(v => [
+                `"${v.snippet.title.replace(/"/g, '""')}"`, // Escape quotes
+                `"${v.snippet.channelTitle.replace(/"/g, '""')}"`,
+                v.statistics.viewCount,
+                v.channelStats?.subscriberCount || 0,
+                v.snippet.publishedAt.split('T')[0],
+                v.id,
+                `https://www.youtube.com/watch?v=${v.id}`
+            ]);
+
+            const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\n'); // Add BOM for Excel
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `YouTube_Analysis_${currentKeyword}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
+    
